@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blockchain Wallet</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios@1.6.8/dist/axios.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.5/dist/socket.io.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.5/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function App() {
+      const [wallet, setWallet] = useState(null);
+      const [stats, setStats] = useState(null);
+      const [history, setHistory] = useState(null);
+      const [toAddress, setToAddress] = useState('');
+      const [amount, setAmount] = useState('');
+      const [message, setMessage] = useState('');
+      const [socket, setSocket] = useState(io('http://localhost:3000'));
+
+      useEffect(() => {
+        // Generate a unique session ID for this tab
+        const sessionId = Math.random().toString(36).substring(2);
+        // Initialize Socket.IO with a unique query parameter
+        const socketInstance = io('http://localhost:3000', {
+          reconnectionAttempts: 5,
+          query: { sessionId }
+        });
+        setSocket(socketInstance);
+
+        socketInstance.on('connect', async () => {
+          console.log('Connected to server with session ID:', sessionId);
+          await createWallet();
+          await fetchStats();
+        });
+
+        socketInstance.on('new-wallet', (data) => {
+          if (wallet && data.address === wallet.address) {
+            setMessage(`Wallet ${data.address} created with initial balance: ${data.initialBalance} BTC`);
+            fetchStats();
+          }
+        });
+
+        socketInstance.on('new-transaction', (data) => {
+          if (wallet && (data.from === wallet.address || data.to === wallet.address)) {
+            setMessage('New transaction detected! Refreshing stats and history...');
+            fetchStats();
+            fetchHistory();
+          }
+        });
+
+        // Cleanup on unmount
+        return () => {
+          socketInstance.disconnect();
+        };
+      }, []); // Empty dependency array to run only once
+
+      
+      const createWallet = async () => {
+        try {
+          const response = await axios.post('http://localhost:3000/create-wallet');
+          const newWallet = response.data;
+          setWallet(newWallet);
+          setMessage(`Wallet created: ${newWallet.address}`);
+          fetchStats();
+        } catch (error) {
+          setMessage(`Error creating wallet: ${error.message}`);
+        }
+      };
+
+      const fetchStats = async () => {
+        if (!wallet) return;
+        try {
+          const response = await axios.get(`http://localhost:3000/account-stats/${wallet.address}`);
+          
+          setStats(response.data);
+        } catch (error) {
+          setMessage(`Error fetching stats: ${error.message}`);
+        }
+      };
+
+      const fetchHistory = async () => {
+        if (!wallet) return;
+        try {
+          const response = await axios.get(`http://localhost:3000/transaction-history/${wallet.address}`);
+          setHistory(response.data);
+        } catch (error) {
+          setMessage(`Error fetching history: ${error.message}`);
+        }
+      };
+
+      const sendCoin = async () => {
+        if (!wallet) {
+          setMessage('Wallet not initialized yet.');
+          return;
+        }
+        try {
+          const response = await axios.post('http://localhost:3000/send-coin', {
+            fromAddress: wallet.address,
+            privateKey: wallet.privateKey,
+            toAddress,
+            amount: parseFloat(amount),
+          });
+          setMessage(`Transaction sent: ${response.data.transaction.txId}`);
+          setToAddress('');
+          setAmount('');
+          fetchHistory();
+        } catch (error) {
+          setMessage(`Error sending coin: ${error.message}`);
+        }
+      };
+
+      socket.on('new-transaction', (data) => {
+        if (wallet && (data.from === wallet.address || data.to === wallet.address)) {
+          console.log('New transaction detected! Refreshing stats and history...');
+          fetchStats();
+          fetchHistory();
+        }
+      });
+
+
+      return (
+        <div className="min-h-screen bg-gray-100 p-6">
+          <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-md p-6">
+            <h1 className="text-3xl font-bold text-center mb-6">Blockchain Wallet</h1>
+
+            {/* Wallet Info */}
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold mb-2">Wallet</h2>
+              {wallet ? (
+                <div>
+                  <p><strong>Address:</strong> {wallet.address}</p>
+                  <p><strong>Private Key:</strong> {wallet.privateKey}</p>
+                  <p><strong>Initial Balance:</strong> {wallet.initialBalance} BTC</p>
+                  <button
+                    onClick={createWallet}
+                    className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 mt-2"
+                  >
+                    Create New Wallet
+                  </button>
+                </div>
+              ) : (
+                <p>Loading wallet...</p>
+              )}
+            </div>
+
+            {/* Account Stats */}
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold mb-2">Account Stats</h2>
+              {stats ? (
+                <div>
+                  <p><strong>Balance:</strong> {stats.balance} BTC</p>
+                  {/*<p><strong>UTXO Count:</strong> {stats.utxoCount}</p>*/}
+                  <button
+                    onClick={fetchStats}
+                    className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 mt-2"
+                  >
+                    Refresh Stats
+                  </button>
+                </div>
+              ) : (
+                <p>No stats available. Wait for wallet creation.</p>
+              )}
+            </div>
+
+            {/* Transaction History */}
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold mb-2">Transaction History</h2>
+              <button
+                onClick={fetchHistory}
+                className="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600 mb-4"
+              >
+                Load History
+              </button>
+              {history && history.transactions.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full bg-white border">
+                    <thead>
+                      <tr>
+                        <th className="py-2 px-4 border">TxID</th>
+                        <th className="py-2 px-4 border">Type</th>
+                        <th className="py-2 px-4 border">Amount</th>
+                        <th className="py-2 px-4 border">Timestamp</th>
+                        <th className="py-2 px-4 border">From</th>
+                        <th className="py-2 px-4 border">To</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {history.transactions.map((tx) => (
+                        <tr key={tx.txId}>
+                          <td className="py-2 px-4 border">{tx.txId}</td>
+                          <td className="py-2 px-4 border">{tx.type}</td>
+                          <td className="py-2 px-4 border">{tx.totalAmount} BTC</td>
+                          <td className="py-2 px-4 border">{tx.timestamp}</td>
+                          <td className="py-2 px-4 border">{tx.from}</td>
+                          <td className="py-2 px-4 border">{tx.to}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p>No transactions available.</p>
+              )}
+            </div>
+
+            {/* Send Coin */}
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold mb-2">Send Coin</h2>
+              <div className="flex flex-col space-y-4">
+                <input
+                  type="text"
+                  placeholder="To Address"
+                  value={toAddress}
+                  onChange={(e) => setToAddress(e.target.value)}
+                  className="border p-2 rounded"
+                />
+                <input
+                  type="number"
+                  placeholder="Amount"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className="border p-2 rounded"
+                />
+                <button
+                  onClick={sendCoin}
+                  className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+
+            {/* Message */}
+            {message && (
+              <div className="small mt-4 p-4 bg-blue-100 text-blue-800 rounded">
+                {message}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
