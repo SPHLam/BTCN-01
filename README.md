@@ -1,8 +1,4 @@
 ## How to run the project
-Clone the repository :
-
-git clone https://github.com/your-username/your-repo.git
-cd your-repo
 
 Installing dependencies:
 npm install
