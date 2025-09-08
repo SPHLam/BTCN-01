@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -31,7 +30,7 @@ class Block {
 let mockUTXOs = [];
 let blockchain = [];
 
-// Add this near the top of server.js, after the imports and class definitions
+// Create a new wallet
 function createWallet() {
   let privateKey;
   do {
@@ -86,6 +85,7 @@ function createBlock(transactions, previousHash) {
   return new Block(index, previousHash, timestamp, transactions, nonce, hash);
 }
 
+// Get account stats
 function getAccountStats(address) {
   const utxos = mockUTXOs.filter(utxo => utxo.address === address);
   const balance = utxos.reduce((sum, utxo) => sum + utxo.amount, 0);
@@ -98,6 +98,7 @@ function getAccountStats(address) {
   };
 }
 
+// Get transaction history
 function getTransactionHistory(address) {
   const transactions = [];
 
@@ -130,6 +131,7 @@ function getTransactionHistory(address) {
   };
 }
 
+// Send coin (create and sign transaction)
 function sendCoin(fromAddress, privateKey, toAddress, amountToSend) {
   const { utxos, balance } = getAccountStats(fromAddress);
 
@@ -261,6 +263,4 @@ app.use(express.static('public'));
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
-// For testing, add initial UTXOs if needed (can be done via clients)
 
